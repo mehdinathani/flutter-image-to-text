@@ -18,10 +18,43 @@ class _HomeViewState extends State<HomeView> {
   String extractedText = "";
   bool isLoading = false;
 
+  // Variables for invoice details
+  String nameValue = "";
+  String invoiceNumberValue = "";
+  String amountValue = "";
+
+  // Variables for dynamic tag lookup
+  final TextEditingController tagController = TextEditingController();
+  String dynamicValue = "";
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for changes in the tag input.
+    tagController.addListener(() {
+      final tag = tagController.text;
+      if (tag.isNotEmpty && extractedText.isNotEmpty) {
+        setState(() {
+          dynamicValue = extractTagValue(tag, extractedText);
+        });
+      } else {
+        setState(() {
+          dynamicValue = "";
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    tagController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("OCR Scanner")),
+      appBar: AppBar(title: const Text("OCR Invoice Scanner")),
       body: buildUI(),
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -58,6 +91,7 @@ class _HomeViewState extends State<HomeView> {
       });
 
       extractedText = await extractTextFromImage(media);
+      extractInvoiceDetails(extractedText);
       setState(() {
         isLoading = false;
       });
@@ -79,6 +113,7 @@ class _HomeViewState extends State<HomeView> {
       });
 
       extractedText = await extractTextFromPdf(pdfFile);
+      extractInvoiceDetails(extractedText);
       setState(() {
         isLoading = false;
       });
@@ -91,7 +126,7 @@ class _HomeViewState extends State<HomeView> {
     final RecognizedText recognizedText = await textRecognizer.processImage(
       inputImage,
     );
-    await textRecognizer.close(); // Free up resources
+    await textRecognizer.close(); // Free resources
     return recognizedText.text;
   }
 
@@ -102,6 +137,24 @@ class _HomeViewState extends State<HomeView> {
     } catch (e) {
       return "Error extracting text from PDF: $e";
     }
+  }
+
+  /// Extracts invoice details (Name, Invoice No, Amount) using preset tags.
+  void extractInvoiceDetails(String text) {
+    nameValue = extractTagValue("Name:", text);
+    invoiceNumberValue = extractTagValue("Invoice No:", text);
+    amountValue = extractTagValue("Amount:", text);
+  }
+
+  /// This function accepts a tag (e.g., "Name:") and searches for it in the text.
+  /// It returns the value following the tag (trimmed) if found, otherwise "Not Found".
+  String extractTagValue(String tag, String text) {
+    final pattern = RegExp(RegExp.escape(tag) + r'\s*(.*)', multiLine: true);
+    final match = pattern.firstMatch(text);
+    if (match != null) {
+      return match.group(1)?.trim() ?? "Not Found";
+    }
+    return "Not Found";
   }
 
   Widget buildUI() {
@@ -117,7 +170,7 @@ class _HomeViewState extends State<HomeView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Show a preview: if it's a PDF, show a PDF icon; if it's an image, display the image.
+                    // Display preview: PDF icon for PDFs, or image for images.
                     selectedMedia!.path.toLowerCase().endsWith(".pdf")
                         ? const Icon(
                           Icons.picture_as_pdf,
@@ -141,6 +194,30 @@ class _HomeViewState extends State<HomeView> {
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 20),
+                            buildDetailRow("Name", nameValue),
+                            buildDetailRow("Invoice No", invoiceNumberValue),
+                            buildDetailRow("Amount", amountValue),
+                            const SizedBox(height: 20),
+                            // Dynamic TextField for user to input a tag.
+                            TextField(
+                              controller: tagController,
+                              decoration: const InputDecoration(
+                                labelText: "Enter tag (e.g., Name:)",
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              "Value: " +
+                                  (dynamicValue.isNotEmpty
+                                      ? dynamicValue
+                                      : "Not Found"),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
                             ElevatedButton.icon(
                               onPressed: () {
                                 Clipboard.setData(
@@ -153,13 +230,42 @@ class _HomeViewState extends State<HomeView> {
                                 );
                               },
                               icon: const Icon(Icons.copy),
-                              label: const Text("Copy Text"),
+                              label: const Text("Copy All Text"),
                             ),
                           ],
                         ),
                   ],
                 ),
               ),
+    );
+  }
+
+  Widget buildDetailRow(String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Text(
+            "$title: ",
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 18, color: Colors.blueGrey),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy, size: 18),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text("$title copied!")));
+            },
+          ),
+        ],
+      ),
     );
   }
 }
